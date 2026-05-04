@@ -199,7 +199,7 @@ const server = http.createServer(async (req, res) => {
     send(res, 404, { error: "Not found" })
 })
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
     console.log("╔══════════════════════════════════════╗")
     console.log(`║  NEXA SERVER HOP — port ${PORT}         ║`)
     console.log("╠══════════════════════════════════════╣")
