@@ -1,12 +1,18 @@
 {
-  "name": "nexa-server",
+  "name": "downloads",
   "version": "1.0.0",
-  "description": "Nexa bot server hop registry",
-  "main": "index.js",
+  "description": "This system connects your desktop Discord job monitor to a Roblox in-game UI, allowing you to: - ✅ See jobs appear in real-time in Roblox - ✅ Auto-fill job IDs automatically - ✅ One-click join to servers - ✅ Scrolling list of recent jobs with name and price - ✅ Connection status indicator",
+  "main": "dragon_notifier.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node dragon_notifier.js"
   },
-  "engines": {
-    "node": ">=18"
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.16.1",
+    "dotenv": "^17.4.2",
+    "ws": "^8.20.1"
   }
 }
