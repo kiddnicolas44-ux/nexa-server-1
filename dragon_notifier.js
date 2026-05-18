@@ -1,8 +1,12 @@
 require("dotenv").config();
 const axios = require("axios");
 
-const BOT_TOKEN  = process.env.DISCORD_TOKEN;
-const CHANNEL_ID = process.env.CHANNEL_ID;
+const BOT_TOKEN = process.env.DISCORD_TOKEN;
+
+// tier channels by gen value
+const CH_LOW  = "1497874973405220895";  // $1M  – $50M
+const CH_MID  = "1497874234444087397";  // $51M – $300M
+const CH_HIGH = "1497874147605217340";  // $300M+
 const SB_URL     = process.env.SUPABASE_URL || "https://tpvkoxypysixinlehpzr.supabase.co";
 const SB_KEY     = process.env.SUPABASE_KEY || "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
 const POLL_MS    = parseInt(process.env.POLL_MS) || 3000;
@@ -23,15 +27,33 @@ function timestamp() {
     });
 }
 
+function parseGenVal(price) {
+    if (!price) return 0;
+    const m = price.replace(/,/g, "").match(/([\d.]+)\s*([KkMmBbTt]?)/);
+    if (!m) return 0;
+    const n = parseFloat(m[1]);
+    const s = m[2].toUpperCase();
+    const mult = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[s] || 1;
+    return n * mult;
+}
+
+function pickChannel(price) {
+    const v = parseGenVal(price);
+    if (v >= 300e6) return CH_HIGH;
+    if (v >= 51e6)  return CH_MID;
+    return CH_LOW;
+}
+
 function imageUrl(name) {
     return IMAGE_BASE + encodeURIComponent(name.replace(/ /g, "_")) + ".png";
 }
 
 async function sendToDiscord(name, price) {
-    if (!BOT_TOKEN || !CHANNEL_ID) {
-        console.log("[warn] DISCORD_TOKEN or CHANNEL_ID missing");
+    if (!BOT_TOKEN) {
+        console.log("[warn] DISCORD_TOKEN missing");
         return;
     }
+    const channelId = pickChannel(price);
 
     const payload = {
         flags: 32768,
@@ -62,11 +84,11 @@ async function sendToDiscord(name, price) {
 
     try {
         const res = await axios.post(
-            `https://discord.com/api/v10/channels/${CHANNEL_ID}/messages`,
+            `https://discord.com/api/v10/channels/${channelId}/messages`,
             payload,
             { headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } }
         );
-        console.log(`[sent] ${name} | ${price} | ${res.status}`);
+        console.log(`[sent] ${name} | ${price} | ch=${channelId} | ${res.status}`);
     } catch (err) {
         console.log("[error]", err.response ? JSON.stringify(err.response.data) : err.message);
     }
@@ -104,7 +126,6 @@ async function poll(lastTs) {
 async function main() {
     console.log("Dragon Notifier — Supabase → Discord");
     if (!BOT_TOKEN)  console.log("[warn] DISCORD_TOKEN not set");
-    if (!CHANNEL_ID) console.log("[warn] CHANNEL_ID not set");
 
     let lastTs = Math.floor(Date.now() / 1000) - 30;
     console.log(`[ready] polling every ${POLL_MS / 1000}s from ts=${lastTs}`);
