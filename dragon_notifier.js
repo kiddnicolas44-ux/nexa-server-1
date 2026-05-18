@@ -1,25 +1,23 @@
 require("dotenv").config();
 const axios = require("axios");
 
-const BOT_TOKEN = process.env.DISCORD_TOKEN;
+// ── PASTE YOUR WEBHOOK URLS HERE ──────────────────────────────
+const WH_LOW  = "https://discord.com/api/webhooks/1475164883464093940/Kn_U4lkP9hdbPs13UjGGKGdwbrZCBg5tYie3TUZtUOSQwyYK5YLcgpIiTU3dWA5jXS68";
+const WH_MID  = "https://discord.com/api/webhooks/1475506550671020046/6u-NoSSXToUeCxNtZJtRunU2GrEkALBdnY-RQz5baAJlvrjxik5BaP1DHtHaiwD-0fti";
+const WH_HIGH = "https://discord.com/api/webhooks/1475506665213399123/ooohWCCIu_xaomE-CHtA4CSnqMEdgV44cUl7QMXhVdcOURP9nZsWzSJd_0DbNspYYZrK";
 
-const WH_LOW  = process.env.WH_LOW  || "";   // lowlights
-const WH_MID  = process.env.WH_MID  || "";   // midlights
-const WH_HIGH = process.env.WH_HIGH || "";   // highlights
-
-const SB_URL  = process.env.SUPABASE_URL || "https://tpvkoxypysixinlehpzr.supabase.co";
-const SB_KEY  = process.env.SUPABASE_KEY || "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
-const POLL_MS = parseInt(process.env.POLL_MS) || 3000;
+const SB_URL  = "https://tpvkoxypysixinlehpzr.supabase.co";
+const SB_KEY  = "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
+const POLL_MS = 3000;
 
 const IMAGE_BASE   = "https://cdn.lura.blue/sab/";
 const DRAGON_EMOJI = "<:logo:1497938082035662988>";
 
-// ── MUTATION PREFIXES (strip to get base brainrot name) ───────
+// ── MUTATION PREFIXES ─────────────────────────────────────────
 const MUTATIONS = new Set([
     "Gold","Diamond","Rainbow","Divine","Crystal","Radioactive",
     "Shadow","Cursed","Lava","Bloodrot","Galaxy","Cyber",
     "YinYang","Candy","Yin","Yang"
-    // NOTE: "Hydra" is NOT a mutation — it's part of brainrot names
 ]);
 
 function baseName(name) {
@@ -30,66 +28,31 @@ function baseName(name) {
     return name;
 }
 
-// ── TIER LISTS (from your channel logs) ──────────────────────
-// Highlights — Dragon Cannelloni server brainrots
+// ── TIER LISTS ────────────────────────────────────────────────
 const HIGHLIGHTS = new Set([
-    "Dragon Cannelloni",
-    "Hydra Dragon Cannelloni",
-    "Foxini Lanternini",
-    "La Casa Boo",
-    "Ketupat Bros",
-    "Quackini Snackini",
-    "Hydra Bunny",
-    "Dug dug dug",
+    "Dragon Cannelloni","Hydra Dragon Cannelloni","Foxini Lanternini",
+    "La Casa Boo","Ketupat Bros","Quackini Snackini","Hydra Bunny","Dug dug dug",
 ]);
 
-// Midlights — mid-tier brainrots
 const MIDLIGHTS = new Set([
-    "Tang Tang Keletang",
-    "Garama and Madundung",
-    "La Easter Grande",
-    "Tictac Sahur",
-    "Ketchuru And Musturu",
-    "Los Bros",
-    "Ketupat Kepat",
-    "Nuclearo Dinossauro",
-    "Capitano Moby",
-    "La Secret Combinasion",
-    "Spooky and Pumpky",
-    "Burguro And Fryuro",
-    "Money Money Bros",
-    "Mieteteira Bicicleteira",
-    "La Ginger Sekolah",
-    "La Lucky Grande",
-    "Nacho Spyder",
-    "Lavadorito Spinito",
+    "Tang Tang Keletang","Garama and Madundung","La Easter Grande",
+    "Tictac Sahur","Ketchuru And Musturu","Los Bros","Ketupat Kepat",
+    "Nuclearo Dinossauro","Capitano Moby","La Secret Combinasion",
+    "Spooky and Pumpky","Burguro And Fryuro","Money Money Bros",
+    "Mieteteira Bicicleteira","La Ginger Sekolah","La Lucky Grande",
+    "Nacho Spyder","Lavadorito Spinito",
 ]);
 
-// Lowlights — standard brainrots (always lowlights only unless value pushes them up)
 const LOWLIGHTS = new Set([
-    "Money Money Puggy",
-    "Spaghetti Tualetti",
-    "Esok Sekolah",
-    "Cigno Fulgoro",
-    "Bacuru and Egguru",
-    "DJ Panda",
-    "Eviledon",
-    "Baskito",
-    "Churrito Bunnito",
-    "Los Candies",
-    "Spinny Hammy",
-    "Bananito",
-    "Snailo Clovero",
-    "Ventoliero Pavonero",
-    "Tacorillo Crocodillo",
-    "La Jolly Grande",
-    "Swaggy Bros",
-    "Los Puggies",
-    "Los Chicleteiras",
+    "Money Money Puggy","Spaghetti Tualetti","Esok Sekolah","Cigno Fulgoro",
+    "Bacuru and Egguru","DJ Panda","Eviledon","Baskito","Churrito Bunnito",
+    "Los Candies","Spinny Hammy","Bananito","Snailo Clovero",
+    "Ventoliero Pavonero","Tacorillo Crocodillo","La Jolly Grande",
+    "Swaggy Bros","Los Puggies","Los Chicleteiras",
 ]);
 
 // ── ROUTING ───────────────────────────────────────────────────
-const _M = {K:1e3, M:1e6, B:1e9, T:1e12};
+const _M = {K:1e3,M:1e6,B:1e9,T:1e12};
 function parseGenVal(price) {
     if (!price) return 0;
     const m = price.replace(/[$,\/s\s]/g,"").match(/^([\d.]+)([KkMmBbTt]?)$/);
@@ -101,30 +64,19 @@ function getChannels(name, price) {
     const base = baseName(name);
     const v    = parseGenVal(price);
 
-    // Name-based routing takes priority over value
-    if (HIGHLIGHTS.has(base)) return [WH_LOW, WH_MID, WH_HIGH].filter(Boolean);
-    if (MIDLIGHTS.has(base))  return [WH_LOW, WH_MID].filter(Boolean);
-
-    // Known lowlight brainrots stay lowlights regardless of value
-    // (unless massive — over 1B still upgrades them)
+    if (HIGHLIGHTS.has(base)) return [WH_LOW, WH_MID, WH_HIGH];
+    if (MIDLIGHTS.has(base))  return [WH_LOW, WH_MID];
     if (LOWLIGHTS.has(base)) {
-        if (v >= 1e9)   return [WH_LOW, WH_MID, WH_HIGH].filter(Boolean);
-        return [WH_LOW].filter(Boolean);
+        if (v >= 1e9) return [WH_LOW, WH_MID, WH_HIGH];
+        return [WH_LOW];
     }
-
-    // Unknown brainrot — route by value
-    if (v >= 1e9)   return [WH_LOW, WH_MID, WH_HIGH].filter(Boolean);
-    if (v >= 350e6) return [WH_LOW, WH_MID].filter(Boolean);
-    return [WH_LOW].filter(Boolean);
+    // unknown — value based
+    if (v >= 1e9)   return [WH_LOW, WH_MID, WH_HIGH];
+    if (v >= 350e6) return [WH_LOW, WH_MID];
+    return [WH_LOW];
 }
 
-// ── HELPERS ───────────────────────────────────────────────────
-const sbHeaders = {
-    apikey:         SB_KEY,
-    Authorization:  `Bearer ${SB_KEY}`,
-    "Content-Type": "application/json",
-};
-
+// ── DISCORD ───────────────────────────────────────────────────
 function timestamp() {
     return new Date().toLocaleString("en-US", {
         month:"short", day:"numeric", year:"numeric",
@@ -132,11 +84,8 @@ function timestamp() {
     });
 }
 
-function imageUrl(name) {
-    return IMAGE_BASE + encodeURIComponent(name.replace(/ /g,"_")) + ".png";
-}
-
 function buildPayload(name, price) {
+    const img = IMAGE_BASE + encodeURIComponent(name.replace(/ /g,"_")) + ".png";
     return {
         username: "Dragon Notifier",
         flags: 32768,
@@ -145,62 +94,71 @@ function buildPayload(name, price) {
             components: [
                 {
                     type: 9,
-                    components: [{
-                        type: 10,
-                        content: `## ${DRAGON_EMOJI} Dragon Notifier\n\n# ${name}\n## ${price}`,
-                    }],
-                    accessory: {
-                        type: 11,
-                        media: { url: imageUrl(name) },
-                        description: name,
-                    },
+                    components: [{ type:10, content:`## ${DRAGON_EMOJI} Dragon Notifier\n\n# ${name}\n## ${price}` }],
+                    accessory: { type:11, media:{url:img}, description:name },
                 },
-                { type: 14, divider: true, spacing: 1 },
-                { type: 10, content: `-# Dragon Notifier • ${timestamp()}` },
+                { type:14, divider:true, spacing:1 },
+                { type:10, content:`-# Dragon Notifier • ${timestamp()}` },
             ],
         }],
-        allowed_mentions: { parse: [] },
+        allowed_mentions: { parse:[] },
     };
 }
 
 async function postWebhook(url, payload) {
     try {
         const res = await axios.post(url, payload, {
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type":"application/json" },
         });
+        if (res.status === 429) {
+            const wait = res.headers["retry-after"] ? parseFloat(res.headers["retry-after"]) * 1000 : 2000;
+            await new Promise(r => setTimeout(r, wait));
+        }
         return res.status;
     } catch (err) {
-        console.log(`[error]`, err.response ? JSON.stringify(err.response.data) : err.message);
+        if (err.response?.status === 429) {
+            await new Promise(r => setTimeout(r, 2000));
+            return 429;
+        }
+        console.log(`[wh error]`, err.response?.data?.message || err.message);
         return 0;
     }
 }
 
 async function sendToDiscord(name, price) {
     const channels = getChannels(name, price);
-    const payload  = buildPayload(name, price);
     const base     = baseName(name);
     const tier     = HIGHLIGHTS.has(base) ? "HIGH" : MIDLIGHTS.has(base) ? "MID" : "LOW";
+    const payload  = buildPayload(name, price);
 
-    console.log(`[send] [${tier}] ${name} | ${price} → ${channels.length} ch`);
+    console.log(`[${tier}] ${name} | ${price}`);
 
     for (const wh of channels) {
         const code = await postWebhook(wh, payload);
-        console.log(`  → ${code}`);
-        if (channels.length > 1) await new Promise(r => setTimeout(r, 500));
+        if (code !== 204 && code !== 200) {
+            console.log(`  ✗ ${code}`);
+        }
+        if (channels.length > 1) await new Promise(r => setTimeout(r, 600));
     }
 }
 
-// ── SUPABASE POLL ─────────────────────────────────────────────
+// ── SUPABASE POLL (old logs + live) ──────────────────────────
+const sbHeaders = {
+    apikey:         SB_KEY,
+    Authorization:  `Bearer ${SB_KEY}`,
+    "Content-Type": "application/json",
+};
+
 async function poll(lastTs) {
     try {
         const res = await axios.get(
-            `${SB_URL}/rest/v1/finds?timestamp=gt.${lastTs}&order=timestamp.asc&limit=500`,
+            `${SB_URL}/rest/v1/finds?timestamp=gt.${lastTs}&order=timestamp.asc&limit=100`,
             { headers: sbHeaders, timeout: 10000 }
         );
 
         const rows = res.data;
         if (!Array.isArray(rows) || rows.length === 0) return lastTs;
-        console.log(`[poll] ${rows.length} new row(s)`);
+        console.log(`\n[poll] ${rows.length} row(s)\n`);
 
         let newTs = lastTs;
         for (const row of rows) {
@@ -208,9 +166,12 @@ async function poll(lastTs) {
             const price = row.gen_text || "";
             const ts    = row.timestamp || 0;
             if (!name || !price) continue;
+
             await sendToDiscord(name, price);
             if (ts > newTs) newTs = ts;
-            await new Promise(r => setTimeout(r, 800));
+
+            // same pace as old logs — 1s between each send
+            await new Promise(r => setTimeout(r, 1000));
         }
         return newTs;
     } catch (err) {
@@ -220,16 +181,10 @@ async function poll(lastTs) {
 }
 
 async function main() {
-    console.log("Dragon Notifier");
-    console.log(`  highlights: ${HIGHLIGHTS.size} brainrots + $1B+`);
-    console.log(`  midlights:  ${MIDLIGHTS.size} brainrots + $350M+`);
-    console.log(`  lowlights:  ${LOWLIGHTS.size} brainrots + everything else`);
-    if (!WH_LOW)  console.log("[warn] WH_LOW not set");
-    if (!WH_MID)  console.log("[warn] WH_MID not set");
-    if (!WH_HIGH) console.log("[warn] WH_HIGH not set");
+    console.log("Dragon Notifier — fetching old logs then going live");
+    console.log(`  HIGH: ${HIGHLIGHTS.size} brainrots | MID: ${MIDLIGHTS.size} | LOW: ${LOWLIGHTS.size} + fallback\n`);
 
-    let lastTs = 0;  // fetch ALL existing rows first, then stay live
-    console.log(`[ready] fetching all historical rows then polling every ${POLL_MS / 1000}s\n`);
+    let lastTs = 0;  // start from beginning — fetches ALL rows
 
     while (true) {
         lastTs = await poll(lastTs);
