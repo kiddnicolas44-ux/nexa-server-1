@@ -3,13 +3,13 @@ const axios = require("axios");
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN;
 
-// tier channels by gen value
-const CH_LOW  = "1497874973405220895";  // $1M  – $50M
-const CH_MID  = "1497874234444087397";  // $51M – $300M
+const CH_LOW  = "1497874973405220895";  // $1M – $50M    (all finds)
+const CH_MID  = "1497874234444087397";  // $51M – $300M  (also gets 300M+)
 const CH_HIGH = "1497874147605217340";  // $300M+
-const SB_URL     = process.env.SUPABASE_URL || "https://tpvkoxypysixinlehpzr.supabase.co";
-const SB_KEY     = process.env.SUPABASE_KEY || "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
-const POLL_MS    = parseInt(process.env.POLL_MS) || 3000;
+
+const SB_URL  = process.env.SUPABASE_URL || "https://tpvkoxypysixinlehpzr.supabase.co";
+const SB_KEY  = process.env.SUPABASE_KEY || "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
+const POLL_MS = parseInt(process.env.POLL_MS) || 3000;
 
 const IMAGE_BASE   = "https://cdn.lura.blue/sab/";
 const DRAGON_EMOJI = "<:logo:1497938082035662988>";
@@ -29,33 +29,27 @@ function timestamp() {
 
 function parseGenVal(price) {
     if (!price) return 0;
-    const m = price.replace(/,/g, "").match(/([\d.]+)\s*([KkMmBbTt]?)/);
+    const m = price.replace(/[$,\/s\s]/g, "").match(/^([\d.]+)([KkMmBbTt]?)$/);
     if (!m) return 0;
     const n = parseFloat(m[1]);
-    const s = m[2].toUpperCase();
-    const mult = { K: 1e3, M: 1e6, B: 1e9, T: 1e12 }[s] || 1;
+    const mult = { K:1e3, M:1e6, B:1e9, T:1e12 }[m[2].toUpperCase()] || 1;
     return n * mult;
 }
 
-function pickChannel(price) {
+// returns array of channels this find should go to
+function getChannels(price) {
     const v = parseGenVal(price);
-    if (v >= 300e6) return CH_HIGH;
-    if (v >= 51e6)  return CH_MID;
-    return CH_LOW;
+    if (v >= 300e6) return [CH_LOW, CH_MID, CH_HIGH];
+    if (v >= 51e6)  return [CH_LOW, CH_MID];
+    return [CH_LOW];
 }
 
 function imageUrl(name) {
     return IMAGE_BASE + encodeURIComponent(name.replace(/ /g, "_")) + ".png";
 }
 
-async function sendToDiscord(name, price) {
-    if (!BOT_TOKEN) {
-        console.log("[warn] DISCORD_TOKEN missing");
-        return;
-    }
-    const channelId = pickChannel(price);
-
-    const payload = {
+function buildPayload(name, price) {
+    return {
         flags: 32768,
         components: [{
             type: 17,
@@ -81,16 +75,40 @@ async function sendToDiscord(name, price) {
         }],
         allowed_mentions: { parse: [] },
     };
+}
 
+async function postToChannel(channelId, payload) {
     try {
         const res = await axios.post(
             `https://discord.com/api/v10/channels/${channelId}/messages`,
             payload,
             { headers: { Authorization: `Bot ${BOT_TOKEN}`, "Content-Type": "application/json" } }
         );
-        console.log(`[sent] ${name} | ${price} | ch=${channelId} | ${res.status}`);
+        return res.status;
     } catch (err) {
-        console.log("[error]", err.response ? JSON.stringify(err.response.data) : err.message);
+        const detail = err.response ? JSON.stringify(err.response.data) : err.message;
+        console.log(`[error ch=${channelId}]`, detail);
+        return 0;
+    }
+}
+
+async function sendToDiscord(name, price) {
+    if (!BOT_TOKEN) {
+        console.log("[warn] DISCORD_TOKEN not set");
+        return;
+    }
+
+    const channels = getChannels(price);
+    const payload  = buildPayload(name, price);
+
+    console.log(`[send] ${name} | ${price} → ${channels.length} channel(s)`);
+
+    for (const ch of channels) {
+        const code = await postToChannel(ch, payload);
+        console.log(`  ch=${ch} → ${code}`);
+        if (channels.length > 1) {
+            await new Promise(r => setTimeout(r, 500)); // gap between sends
+        }
     }
 }
 
@@ -114,7 +132,7 @@ async function poll(lastTs) {
             if (!name || !price) continue;
             await sendToDiscord(name, price);
             if (ts > newTs) newTs = ts;
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 800));
         }
         return newTs;
     } catch (err) {
@@ -125,10 +143,13 @@ async function poll(lastTs) {
 
 async function main() {
     console.log("Dragon Notifier — Supabase → Discord");
-    if (!BOT_TOKEN)  console.log("[warn] DISCORD_TOKEN not set");
+    console.log(`  LOW  (<$50M)  → ${CH_LOW}`);
+    console.log(`  MID  (<$300M) → ${CH_MID}`);
+    console.log(`  HIGH ($300M+) → ${CH_HIGH}`);
+    if (!BOT_TOKEN) console.log("[warn] DISCORD_TOKEN not set in env");
 
     let lastTs = Math.floor(Date.now() / 1000) - 30;
-    console.log(`[ready] polling every ${POLL_MS / 1000}s from ts=${lastTs}`);
+    console.log(`[ready] polling every ${POLL_MS / 1000}s`);
 
     while (true) {
         lastTs = await poll(lastTs);
