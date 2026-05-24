@@ -2,8 +2,8 @@ require("dotenv").config();
 const axios = require("axios");
 
 // ── PASTE YOUR WEBHOOK URLS HERE ──────────────────────────────
-const WH_LOW  = "https://discord.com/api/webhooks/1475164883464093940/Kn_U4lkP9hdbPs13UjGGKGdwbrZCBg5tYie3TUZtUOSQwyYK5YLcgpIiTU3dWA5jXS68";
-const WH_MID  = "https://discord.com/api/webhooks/1475506550671020046/6u-NoSSXToUeCxNtZJtRunU2GrEkALBdnY-RQz5baAJlvrjxik5BaP1DHtHaiwD-0fti";
+const WH_LOW  = "https://discord.com/api/webhooks/1507662157561466992/GmNRfTgZAQ0Z2KbbCQ_u1taBCDg1nq1FfnWrVQKO2nkFNJWwFV8JKGMwFqZCJZwpSCg9";
+const WH_MID  = "https://discord.com/api/webhooks/1507662016171606197/ITTSMowtHHontu_EBj-ujn6FZrc6D91c8ZMFZ8DTWVCVSJOr_m3CZJKxhcWC8VUxrknl";
 const WH_HIGH = "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
 
 const SB_URL  = "https://tpvkoxypysixinlehpzr.supabase.co";
