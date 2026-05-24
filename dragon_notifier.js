@@ -4,7 +4,7 @@ const axios = require("axios");
 // ── PASTE YOUR WEBHOOK URLS HERE ──────────────────────────────
 const WH_LOW  = "https://discord.com/api/webhooks/1475164883464093940/Kn_U4lkP9hdbPs13UjGGKGdwbrZCBg5tYie3TUZtUOSQwyYK5YLcgpIiTU3dWA5jXS68";
 const WH_MID  = "https://discord.com/api/webhooks/1475506550671020046/6u-NoSSXToUeCxNtZJtRunU2GrEkALBdnY-RQz5baAJlvrjxik5BaP1DHtHaiwD-0fti";
-const WH_HIGH = "https://discord.com/api/webhooks/1475506665213399123/ooohWCCIu_xaomE-CHtA4CSnqMEdgV44cUl7QMXhVdcOURP9nZsWzSJd_0DbNspYYZrK";
+const WH_HIGH = "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
 
 const SB_URL  = "https://tpvkoxypysixinlehpzr.supabase.co";
 const SB_KEY  = "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
