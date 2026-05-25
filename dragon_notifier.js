@@ -14,18 +14,25 @@ require("dotenv").config();
 const axios  = require("axios");
 const crypto = require("crypto");
 
-// ── WEBHOOK URLS ──────────────────────────────────────────────
-// HARDCODED per request. ANYONE with these URLs can post to your
-// channels — keep this file private (don't push to a public repo).
+// ── DISCORD BOT TOKEN + CHANNEL IDS ──────────────────────────
+// HARDCODED per request. The bot token gives full bot account control —
+// keep this file private (don't push to a public repo). For Railway, use
+// the environment variables UI instead so they don't end up on GitHub.
 //
-// To rotate: Discord → Server Settings → Integrations → Webhooks →
-//            delete + recreate, then paste the new URLs here.
-const WH_LOW  = "https://discord.com/api/webhooks/1507662157561466992/GmNRfTgZAQ0Z2KbbCQ_u1taBCDg1nq1FfnWrVQKO2nkFNJWwFV8JKGMwFqZCJZwpSCg9";
-const WH_MID  = "https://discord.com/api/webhooks/1507662016171606197/ITTSMowtHHontu_EBj-ujn6FZrc6D91c8ZMFZ8DTWVCVSJOr_m3CZJKxhcWC8VUxrknl";
-const WH_HIGH = "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
+// Setup:
+//   1. https://discord.com/developers/applications → New Application → Bot
+//   2. Reset Token → copy it into BOT_TOKEN below
+//   3. OAuth2 → URL Generator → scopes: bot → permissions: Send Messages
+//      → invite the bot to your server
+//   4. Right-click each tier channel → Copy Channel ID (Developer Mode on)
+const BOT_TOKEN     = "MTUwNTAwMjA4MDYxMDI4NzYzNg.GhUebQ.kNQJimP1wN6h7R7Ug0e_n_ILae8htKgwYk-VqA";
+const CHANNEL_LOW   = "1497874973405220895";
+const CHANNEL_MID   = "1497874234444087397";
+const CHANNEL_HIGH  = "1497874147605217340";
 
-if (WH_LOW.startsWith("PASTE_") || WH_MID.startsWith("PASTE_") || WH_HIGH.startsWith("PASTE_")) {
-    console.error("Webhook URLs not set. Rotate them in Discord and paste the new ones at the top of this file.");
+if (BOT_TOKEN.startsWith("PASTE_") || CHANNEL_LOW.startsWith("PASTE_")
+    || CHANNEL_MID.startsWith("PASTE_") || CHANNEL_HIGH.startsWith("PASTE_")) {
+    console.error("Bot token or channel IDs not set. Edit the top of this file.");
     process.exit(1);
 }
 
@@ -175,16 +182,16 @@ function getChannels(name, price) {
     const base = baseName(name);
     const v    = parseGenVal(price);
 
-    if (HIGHLIGHTS.has(base)) return [WH_LOW, WH_MID, WH_HIGH];
-    if (MIDLIGHTS.has(base))  return [WH_LOW, WH_MID];
+    if (HIGHLIGHTS.has(base)) return [CHANNEL_LOW, CHANNEL_MID, CHANNEL_HIGH];
+    if (MIDLIGHTS.has(base))  return [CHANNEL_LOW, CHANNEL_MID];
     if (LOWLIGHTS.has(base)) {
-        if (v >= 1e9) return [WH_LOW, WH_MID, WH_HIGH];
-        return [WH_LOW];
+        if (v >= 1e9) return [CHANNEL_LOW, CHANNEL_MID, CHANNEL_HIGH];
+        return [CHANNEL_LOW];
     }
     // unknown — value based
-    if (v >= 1e9)   return [WH_LOW, WH_MID, WH_HIGH];
-    if (v >= 350e6) return [WH_LOW, WH_MID];
-    return [WH_LOW];
+    if (v >= 1e9)   return [CHANNEL_LOW, CHANNEL_MID, CHANNEL_HIGH];
+    if (v >= 350e6) return [CHANNEL_LOW, CHANNEL_MID];
+    return [CHANNEL_LOW];
 }
 
 // ── DISCORD ───────────────────────────────────────────────────
@@ -198,32 +205,50 @@ function timestamp() {
 function buildPayload(name, price) {
     const img = IMAGE_BASE + encodeURIComponent(name.replace(/ /g,"_")) + ".png";
 
-    // Tier-based embed color (HIGH=red, MID=orange, LOW=blue)
-    const base = baseName(name);
-    let color  = 0x4A90E2;  // default blue
-    if (HIGHLIGHTS.has(base))      color = 0xFF4444;
-    else if (MIDLIGHTS.has(base))  color = 0xFFAA00;
-
-    // Classic embed format — works on ALL webhook types (server-owned or
-    // app-owned). Avoids Components V2 which only app-owned webhooks support.
+    // Components V2 embed — same style as your uploaded template but with
+    // the Job ID + Players section dropped (not displayed). Requires bot
+    // token + channel API (webhooks don't support Components V2).
     return {
-        username: "Dragon Notifier",
-        embeds: [{
-            title:       name,
-            description: `## ${price}`,
-            color:       color,
-            thumbnail:   { url: img },
-            footer:      { text: `Dragon Notifier • ${timestamp()}` },
+        flags: 32768,   // IS_COMPONENTS_V2
+        components: [{
+            type: 17,   // Container
+            components: [
+                {
+                    type: 9,   // Section
+                    components: [{
+                        type: 10,   // Text Display
+                        content:
+`## ${DRAGON_EMOJI} Dragon Notifier
+
+# ${name}
+## ${price}`
+                    }],
+                    accessory: {
+                        type: 11,   // Thumbnail
+                        media: { url: img },
+                        description: name,
+                    },
+                },
+                { type: 14, divider: true, spacing: 1 },   // Separator
+                { type: 10, content: `-# Dragon Notifier • ${timestamp()}` },
+            ],
         }],
         allowed_mentions: { parse: [] },
     };
 }
 
-async function postWebhook(url, payload) {
+async function postToChannel(channelId, payload) {
     try {
-        const res = await axios.post(url, payload, {
-            headers: { "Content-Type":"application/json" },
-        });
+        const res = await axios.post(
+            `https://discord.com/api/v10/channels/${channelId}/messages`,
+            payload,
+            {
+                headers: {
+                    Authorization:  `Bot ${BOT_TOKEN}`,
+                    "Content-Type": "application/json",
+                },
+            }
+        );
         if (res.status === 429) {
             const wait = res.headers["retry-after"] ? parseFloat(res.headers["retry-after"]) * 1000 : 2000;
             await new Promise(r => setTimeout(r, wait));
@@ -234,12 +259,10 @@ async function postWebhook(url, payload) {
             await new Promise(r => setTimeout(r, 2000));
             return 429;
         }
-        // Full diagnostic dump so we can actually see what Discord rejected
         const status = err.response?.status || "?";
         const data   = err.response?.data;
-        console.log(`[wh error] ${status} ${err.response?.statusText || ""}`);
+        console.log(`[discord error] ${status} ${err.response?.statusText || ""}`);
         if (data) {
-            // Pretty-print the full error body — includes which field is wrong
             console.log("  response:", JSON.stringify(data, null, 2).slice(0, 600));
         } else {
             console.log("  message:", err.message);
@@ -256,9 +279,9 @@ async function sendToDiscord(name, price) {
 
     console.log(`[${tier}] ${name} | ${price}`);
 
-    for (const wh of channels) {
-        const code = await postWebhook(wh, payload);
-        if (code !== 204 && code !== 200) {
+    for (const ch of channels) {
+        const code = await postToChannel(ch, payload);
+        if (code !== 200 && code !== 201 && code !== 204) {
             console.log(`  ✗ ${code}`);
         }
         if (channels.length > 1) await new Promise(r => setTimeout(r, 600));
