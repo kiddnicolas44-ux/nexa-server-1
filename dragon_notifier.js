@@ -228,8 +228,17 @@ async function postWebhook(url, payload) {
             await new Promise(r => setTimeout(r, 2000));
             return 429;
         }
-        console.log(`[wh error]`, err.response?.data?.message || err.message);
-        return 0;
+        // Full diagnostic dump so we can actually see what Discord rejected
+        const status = err.response?.status || "?";
+        const data   = err.response?.data;
+        console.log(`[wh error] ${status} ${err.response?.statusText || ""}`);
+        if (data) {
+            // Pretty-print the full error body — includes which field is wrong
+            console.log("  response:", JSON.stringify(data, null, 2).slice(0, 600));
+        } else {
+            console.log("  message:", err.message);
+        }
+        return err.response?.status || 0;
     }
 }
 
