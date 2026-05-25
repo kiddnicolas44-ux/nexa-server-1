@@ -1,45 +1,36 @@
 // Dragon Notifier — Supabase → Discord forwarder
 // v2: decrypts AES-256-GCM rows written by the Python reader, then
 //     fans out to tier-routed webhooks.
-//
-// Encryption stack matches notifier_reader_v4.py and the Lua notifier:
-//   - Same 16 _W word constants → same 64-byte _KB → same 32-byte AES key
-//   - Same v7: nonce_hex(24) + tag_hex(32) + ct_hex format
-//   - Plaintext is JSON: {name, gen_text, job_id, place_id}
-//
-// pip install requests cryptography  (for Python side)
-// npm install axios dotenv           (for this side)
 
 require("dotenv").config();
 const axios  = require("axios");
 const crypto = require("crypto");
 
 // ── DISCORD BOT TOKEN + CHANNEL IDS ──────────────────────────
-// HARDCODED per request. The bot token gives full bot account control —
-// keep this file private (don't push to a public repo). For Railway, use
-// the environment variables UI instead so they don't end up on GitHub.
-//
-// Setup:
-//   1. https://discord.com/developers/applications → New Application → Bot
-//   2. Reset Token → copy it into BOT_TOKEN below
-//   3. OAuth2 → URL Generator → scopes: bot → permissions: Send Messages
-//      → invite the bot to your server
-//   4. Right-click each tier channel → Copy Channel ID (Developer Mode on)
-const BOT_TOKEN     = "MTUwNTAwMjA4MDYxMDI4NzYzNg.G_OR9u.TsCtsrZuGtfuksJHQmiZtjQqYn0-5_YeGHXyDk";
-const CHANNEL_LOW   = "1497874973405220895";
-const CHANNEL_MID   = "1497874234444087397";
-const CHANNEL_HIGH  = "1497874147605217340";
+// These are loaded from environment variables — never hardcode them.
+// In Railway: Project → Variables → add each one.
+// Locally: create a .env file (see .env.example)
+const BOT_TOKEN   = process.env.BOT_TOKEN;
+const CHANNEL_LOW  = process.env.CHANNEL_LOW;
+const CHANNEL_MID  = process.env.CHANNEL_MID;
+const CHANNEL_HIGH = process.env.CHANNEL_HIGH;
 
-if (BOT_TOKEN.startsWith("PASTE_") || CHANNEL_LOW.startsWith("PASTE_")
-    || CHANNEL_MID.startsWith("PASTE_") || CHANNEL_HIGH.startsWith("PASTE_")) {
-    console.error("Bot token or channel IDs not set. Edit the top of this file.");
+if (!BOT_TOKEN || !CHANNEL_LOW || !CHANNEL_MID || !CHANNEL_HIGH) {
+    console.error("Missing required environment variables.");
+    console.error("Required: BOT_TOKEN, CHANNEL_LOW, CHANNEL_MID, CHANNEL_HIGH");
+    console.error("Set these in Railway Variables or in a local .env file.");
     process.exit(1);
 }
 
-// ── NEW SUPABASE PROJECT ─────────────────────────────────────
-const SB_URL  = "https://vpmbiscioxkfauoesyqg.supabase.co";
-const SB_KEY  = "sb_publishable_54eFG9h9g_cXQgvGxSYe-A_DBOKZl7_";
+// ── SUPABASE ─────────────────────────────────────────────────
+const SB_URL  = process.env.SB_URL;
+const SB_KEY  = process.env.SB_KEY;
 const POLL_MS = 3000;
+
+if (!SB_URL || !SB_KEY) {
+    console.error("Missing SB_URL or SB_KEY environment variables.");
+    process.exit(1);
+}
 
 const IMAGE_BASE   = "https://cdn.lura.blue/sab/";
 const DRAGON_EMOJI = "<:logo:1497938082035662988>";
@@ -69,7 +60,6 @@ function buildAesKey() {
     W[15] = or(ls(((210 ^ 0xFF) * 256 + (89 ^ 0xFF)), 16), ((160 ^ 0xFF) * 256 + (116 ^ 0xFF)));
     W[16] = or(ls(57612, 16), 18815);
 
-    // 64 bytes (big-endian, same byte order as Python/Lua)
     const KB = [];
     for (let i = 1; i <= 16; i++) {
         const w = W[i];
@@ -78,7 +68,6 @@ function buildAesKey() {
         KB.push((w >>> 8)  & 0xFF);
         KB.push( w         & 0xFF);
     }
-    // AES key = XOR of two 32-byte halves
     const key = Buffer.alloc(32);
     for (let i = 0; i < 32; i++) key[i] = KB[i] ^ KB[i + 32];
     return key;
@@ -91,7 +80,7 @@ console.log(`[crypto] AES key first 4 hex: ${AES_KEY.subarray(0,4).toString("hex
 function decryptPayload(s) {
     if (typeof s !== "string" || !s.startsWith("v7:")) return null;
     const body = s.slice(3);
-    if (body.length < 24 + 32 + 2) return null;     // nonce + tag + min ct
+    if (body.length < 24 + 32 + 2) return null;
     const nonceHex = body.slice(0, 24);
     const tagHex   = body.slice(24, 24 + 32);
     const ctHex    = body.slice(24 + 32);
@@ -105,15 +94,11 @@ function decryptPayload(s) {
         const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
         return JSON.parse(pt.toString("utf8"));
     } catch (err) {
-        // Auth tag mismatch or malformed plaintext — row was tampered with
-        // or wasn't encrypted with our key. Skip silently.
         return null;
     }
 }
 
-// Self-test on startup so we fail loudly if anything is misaligned
 (function selftest() {
-    // Roundtrip with a known plaintext via encryption
     const sample = { name: "Test", gen_text: "$10M/s", job_id: "abc", place_id: "" };
     const nonce = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv("aes-256-gcm", AES_KEY, nonce);
@@ -124,8 +109,6 @@ function decryptPayload(s) {
     const decoded = decryptPayload(blob);
     if (!decoded || decoded.name !== "Test" || decoded.gen_text !== "$10M/s") {
         console.error("[crypto] SELF-TEST FAILED — encryption is misaligned, aborting");
-        console.error(`  produced: ${blob.slice(0,60)}...`);
-        console.error(`  decoded:  ${JSON.stringify(decoded)}`);
         process.exit(1);
     }
     console.log("[crypto] self-test OK — Python-encrypted rows will decrypt here");
@@ -188,7 +171,6 @@ function getChannels(name, price) {
         if (v >= 1e9) return [CHANNEL_LOW, CHANNEL_MID, CHANNEL_HIGH];
         return [CHANNEL_LOW];
     }
-    // unknown — value based
     if (v >= 1e9)   return [CHANNEL_LOW, CHANNEL_MID, CHANNEL_HIGH];
     if (v >= 350e6) return [CHANNEL_LOW, CHANNEL_MID];
     return [CHANNEL_LOW];
@@ -204,19 +186,15 @@ function timestamp() {
 
 function buildPayload(name, price) {
     const img = IMAGE_BASE + encodeURIComponent(name.replace(/ /g,"_")) + ".png";
-
-    // Components V2 embed — same style as your uploaded template but with
-    // the Job ID + Players section dropped (not displayed). Requires bot
-    // token + channel API (webhooks don't support Components V2).
     return {
-        flags: 32768,   // IS_COMPONENTS_V2
+        flags: 32768,
         components: [{
-            type: 17,   // Container
+            type: 17,
             components: [
                 {
-                    type: 9,   // Section
+                    type: 9,
                     components: [{
-                        type: 10,   // Text Display
+                        type: 10,
                         content:
 `## ${DRAGON_EMOJI} Dragon Notifier
 
@@ -224,12 +202,12 @@ function buildPayload(name, price) {
 ## ${price}`
                     }],
                     accessory: {
-                        type: 11,   // Thumbnail
+                        type: 11,
                         media: { url: img },
                         description: name,
                     },
                 },
-                { type: 14, divider: true, spacing: 1 },   // Separator
+                { type: 14, divider: true, spacing: 1 },
                 { type: 10, content: `-# Dragon Notifier • ${timestamp()}` },
             ],
         }],
@@ -288,7 +266,7 @@ async function sendToDiscord(name, price) {
     }
 }
 
-// ── SUPABASE POLL — decrypts each row before forwarding ──────
+// ── SUPABASE POLL ─────────────────────────────────────────────
 const sbHeaders = {
     apikey:         SB_KEY,
     Authorization:  `Bearer ${SB_KEY}`,
@@ -311,8 +289,6 @@ async function poll(lastTs) {
             const ts = row.timestamp || 0;
             if (ts > newTs) newTs = ts;
 
-            // Decrypt the row. Each row's `name` column holds the
-            // encrypted blob; gen_text / job_id are empty strings.
             const rawName = row.name || "";
             let name, price, jobId;
 
@@ -326,8 +302,6 @@ async function poll(lastTs) {
                 price = payload.gen_text || "";
                 jobId = payload.job_id   || "";
             } else {
-                // Plaintext fallback: rows written by some other tool
-                // that doesn't encrypt. Use them directly.
                 name  = rawName;
                 price = row.gen_text || "";
                 jobId = row.job_id   || "";
@@ -339,7 +313,7 @@ async function poll(lastTs) {
             }
 
             await sendToDiscord(name, price);
-            await new Promise(r => setTimeout(r, 1000));   // 1s pacing
+            await new Promise(r => setTimeout(r, 1000));
         }
         return newTs;
     } catch (err) {
