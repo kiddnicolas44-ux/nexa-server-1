@@ -177,13 +177,6 @@ function getChannels(name, price) {
 }
 
 // ── DISCORD ───────────────────────────────────────────────────
-function timestamp() {
-    return new Date().toLocaleString("en-US", {
-        month:"short", day:"numeric", year:"numeric",
-        hour:"numeric", minute:"2-digit", hour12:true,
-    });
-}
-
 function buildPayload(name, price) {
     const img = IMAGE_BASE + encodeURIComponent(name.replace(/ /g,"_")) + ".png";
     return {
@@ -208,7 +201,7 @@ function buildPayload(name, price) {
                     },
                 },
                 { type: 14, divider: true, spacing: 1 },
-                { type: 10, content: `-# Dragon Notifier • ${timestamp()}` },
+                { type: 10, content: `-# Dragon Notifier • <t:${Math.floor(Date.now() / 1000)}:R>` },
             ],
         }],
         allowed_mentions: { parse: [] },
