@@ -15,14 +15,17 @@ const axios  = require("axios");
 const crypto = require("crypto");
 
 // ── WEBHOOK URLS ──────────────────────────────────────────────
-// SECURITY: anyone with these URLs can post to your channels. Keep
-// them in .env, not in this file. Loaded from process.env below.
-const WH_LOW  = process.env.WEBHOOK_LOW  || "https://discord.com/api/webhooks/1507662157561466992/GmNRfTgZAQ0Z2KbbCQ_u1taBCDg1nq1FfnWrVQKO2nkFNJWwFV8JKGMwFqZCJZwpSCg9";
-const WH_MID  = process.env.WEBHOOK_MID  || "https://discord.com/api/webhooks/1507662016171606197/ITTSMowtHHontu_EBj-ujn6FZrc6D91c8ZMFZ8DTWVCVSJOr_m3CZJKxhcWC8VUxrknl";
-const WH_HIGH = process.env.WEBHOOK_HIGH || "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
+// HARDCODED per request. ANYONE with these URLs can post to your
+// channels — keep this file private (don't push to a public repo).
+//
+// To rotate: Discord → Server Settings → Integrations → Webhooks →
+//            delete + recreate, then paste the new URLs here.
+const WH_LOW  = "https://discord.com/api/webhooks/1507662157561466992/GmNRfTgZAQ0Z2KbbCQ_u1taBCDg1nq1FfnWrVQKO2nkFNJWwFV8JKGMwFqZCJZwpSCg9";
+const WH_MID  = "https://discord.com/api/webhooks/1507662016171606197/ITTSMowtHHontu_EBj-ujn6FZrc6D91c8ZMFZ8DTWVCVSJOr_m3CZJKxhcWC8VUxrknl";
+const WH_HIGH = "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
 
-if (!WH_LOW || !WH_MID || !WH_HIGH) {
-    console.error("Set WEBHOOK_LOW / WEBHOOK_MID / WEBHOOK_HIGH in .env");
+if (WH_LOW.startsWith("PASTE_") || WH_MID.startsWith("PASTE_") || WH_HIGH.startsWith("PASTE_")) {
+    console.error("Webhook URLs not set. Rotate them in Discord and paste the new ones at the top of this file.");
     process.exit(1);
 }
 
@@ -194,22 +197,25 @@ function timestamp() {
 
 function buildPayload(name, price) {
     const img = IMAGE_BASE + encodeURIComponent(name.replace(/ /g,"_")) + ".png";
+
+    // Tier-based embed color (HIGH=red, MID=orange, LOW=blue)
+    const base = baseName(name);
+    let color  = 0x4A90E2;  // default blue
+    if (HIGHLIGHTS.has(base))      color = 0xFF4444;
+    else if (MIDLIGHTS.has(base))  color = 0xFFAA00;
+
+    // Classic embed format — works on ALL webhook types (server-owned or
+    // app-owned). Avoids Components V2 which only app-owned webhooks support.
     return {
         username: "Dragon Notifier",
-        flags: 32768,
-        components: [{
-            type: 17,
-            components: [
-                {
-                    type: 9,
-                    components: [{ type:10, content:`## ${DRAGON_EMOJI} Dragon Notifier\n\n# ${name}\n## ${price}` }],
-                    accessory: { type:11, media:{url:img}, description:name },
-                },
-                { type:14, divider:true, spacing:1 },
-                { type:10, content:`-# Dragon Notifier • ${timestamp()}` },
-            ],
+        embeds: [{
+            title:       name,
+            description: `## ${price}`,
+            color:       color,
+            thumbnail:   { url: img },
+            footer:      { text: `Dragon Notifier • ${timestamp()}` },
         }],
-        allowed_mentions: { parse:[] },
+        allowed_mentions: { parse: [] },
     };
 }
 
