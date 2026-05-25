@@ -25,7 +25,7 @@ const crypto = require("crypto");
 //   3. OAuth2 → URL Generator → scopes: bot → permissions: Send Messages
 //      → invite the bot to your server
 //   4. Right-click each tier channel → Copy Channel ID (Developer Mode on)
-const BOT_TOKEN     = "MTUwNTAwMjA4MDYxMDI4NzYzNg.GhUebQ.kNQJimP1wN6h7R7Ug0e_n_ILae8htKgwYk-VqA";
+const BOT_TOKEN     = "MTUwNTAwMjA4MDYxMDI4NzYzNg.GRZagv.FWgNKCzxttKGN5l2-op3ooQJ_a8LliwjR4VbKM";
 const CHANNEL_LOW   = "1497874973405220895";
 const CHANNEL_MID   = "1497874234444087397";
 const CHANNEL_HIGH  = "1497874147605217340";
