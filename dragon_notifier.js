@@ -1,17 +1,125 @@
+// Dragon Notifier — Supabase → Discord forwarder
+// v2: decrypts AES-256-GCM rows written by the Python reader, then
+//     fans out to tier-routed webhooks.
+//
+// Encryption stack matches notifier_reader_v4.py and the Lua notifier:
+//   - Same 16 _W word constants → same 64-byte _KB → same 32-byte AES key
+//   - Same v7: nonce_hex(24) + tag_hex(32) + ct_hex format
+//   - Plaintext is JSON: {name, gen_text, job_id, place_id}
+//
+// pip install requests cryptography  (for Python side)
+// npm install axios dotenv           (for this side)
+
 require("dotenv").config();
-const axios = require("axios");
+const axios  = require("axios");
+const crypto = require("crypto");
 
-// ── PASTE YOUR WEBHOOK URLS HERE ──────────────────────────────
-const WH_LOW  = "https://discord.com/api/webhooks/1507662157561466992/GmNRfTgZAQ0Z2KbbCQ_u1taBCDg1nq1FfnWrVQKO2nkFNJWwFV8JKGMwFqZCJZwpSCg9";
-const WH_MID  = "https://discord.com/api/webhooks/1507662016171606197/ITTSMowtHHontu_EBj-ujn6FZrc6D91c8ZMFZ8DTWVCVSJOr_m3CZJKxhcWC8VUxrknl";
-const WH_HIGH = "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
+// ── WEBHOOK URLS ──────────────────────────────────────────────
+// SECURITY: anyone with these URLs can post to your channels. Keep
+// them in .env, not in this file. Loaded from process.env below.
+const WH_LOW  = process.env.WEBHOOK_LOW  || "https://discord.com/api/webhooks/1507662157561466992/GmNRfTgZAQ0Z2KbbCQ_u1taBCDg1nq1FfnWrVQKO2nkFNJWwFV8JKGMwFqZCJZwpSCg9";
+const WH_MID  = process.env.WEBHOOK_MID  || "https://discord.com/api/webhooks/1507662016171606197/ITTSMowtHHontu_EBj-ujn6FZrc6D91c8ZMFZ8DTWVCVSJOr_m3CZJKxhcWC8VUxrknl";
+const WH_HIGH = process.env.WEBHOOK_HIGH || "https://discord.com/api/webhooks/1507661812844462150/8bb18tkXVaTFnRVq_yJ6egnQnH_8YX60UI782UHqoDM476Vfqsf0FMgfPx_zaCFMbx7d";
 
-const SB_URL  = "https://tpvkoxypysixinlehpzr.supabase.co";
-const SB_KEY  = "sb_publishable_9DMVAYYzxdA-5LVp1WcKTw_it9fD825";
+if (!WH_LOW || !WH_MID || !WH_HIGH) {
+    console.error("Set WEBHOOK_LOW / WEBHOOK_MID / WEBHOOK_HIGH in .env");
+    process.exit(1);
+}
+
+// ── NEW SUPABASE PROJECT ─────────────────────────────────────
+const SB_URL  = "https://vpmbiscioxkfauoesyqg.supabase.co";
+const SB_KEY  = "sb_publishable_54eFG9h9g_cXQgvGxSYe-A_DBOKZl7_";
 const POLL_MS = 3000;
 
 const IMAGE_BASE   = "https://cdn.lura.blue/sab/";
 const DRAGON_EMOJI = "<:logo:1497938082035662988>";
+
+// ── AES KEY DERIVATION (matches Python and Lua sides byte-for-byte) ──
+function buildAesKey() {
+    const MASK32 = 0xFFFFFFFF;
+    const ls = (x, n) => ((x << n) & MASK32) >>> 0;
+    const xor = (a, b) => ((a ^ b) & MASK32) >>> 0;
+    const or  = (a, b) => ((a | b) & MASK32) >>> 0;
+
+    const W = new Array(17);
+    W[1]  = or(ls(50046, 16), 10993);
+    W[2]  = xor(or(ls(54039, 16), 5017),  or(ls(0x5A5A, 16), 0xA5A5));
+    W[3]  = or(ls(or(ls(81, 8), 168), 16),  or(ls(226, 8), 159));
+    W[4]  = xor(or(ls(54233, 16), 30137), or(ls(0xDEAD, 16), 0xBEEF));
+    W[5]  = or(ls(((236 ^ 0xFF) * 256 + (116 ^ 0xFF)), 16), ((38 ^ 0xFF) * 256 + (189 ^ 0xFF)));
+    W[6]  = or(ls(26620, 16), 7843);
+    W[7]  = xor(or(ls(10871, 16), 12317), or(ls(0x5A5A, 16), 0xA5A5));
+    W[8]  = or(ls(or(ls(79, 8), 230), 16),  or(ls(56, 8), 202));
+    W[9]  = xor(or(ls(30642, 16), 33693), or(ls(0xDEAD, 16), 0xBEEF));
+    W[10] = or(ls(((163 ^ 0xFF) * 256 + (123 ^ 0xFF)), 16), ((25 ^ 0xFF) * 256 + (254 ^ 0xFF)));
+    W[11] = or(ls(48416, 16), 63559);
+    W[12] = xor(or(ls(25420, 16), 57195), or(ls(0x5A5A, 16), 0xA5A5));
+    W[13] = or(ls(or(ls(240, 8), 75), 16),  or(ls(40, 8), 213));
+    W[14] = xor(or(ls(41022, 16), 32747), or(ls(0xDEAD, 16), 0xBEEF));
+    W[15] = or(ls(((210 ^ 0xFF) * 256 + (89 ^ 0xFF)), 16), ((160 ^ 0xFF) * 256 + (116 ^ 0xFF)));
+    W[16] = or(ls(57612, 16), 18815);
+
+    // 64 bytes (big-endian, same byte order as Python/Lua)
+    const KB = [];
+    for (let i = 1; i <= 16; i++) {
+        const w = W[i];
+        KB.push((w >>> 24) & 0xFF);
+        KB.push((w >>> 16) & 0xFF);
+        KB.push((w >>> 8)  & 0xFF);
+        KB.push( w         & 0xFF);
+    }
+    // AES key = XOR of two 32-byte halves
+    const key = Buffer.alloc(32);
+    for (let i = 0; i < 32; i++) key[i] = KB[i] ^ KB[i + 32];
+    return key;
+}
+
+const AES_KEY = buildAesKey();
+console.log(`[crypto] AES key first 4 hex: ${AES_KEY.subarray(0,4).toString("hex")}`);
+
+// ── DECRYPT a v7: payload ────────────────────────────────────
+function decryptPayload(s) {
+    if (typeof s !== "string" || !s.startsWith("v7:")) return null;
+    const body = s.slice(3);
+    if (body.length < 24 + 32 + 2) return null;     // nonce + tag + min ct
+    const nonceHex = body.slice(0, 24);
+    const tagHex   = body.slice(24, 24 + 32);
+    const ctHex    = body.slice(24 + 32);
+    if (!/^[0-9a-fA-F]+$/.test(nonceHex + tagHex + ctHex)) return null;
+    const nonce = Buffer.from(nonceHex, "hex");
+    const tag   = Buffer.from(tagHex,   "hex");
+    const ct    = Buffer.from(ctHex,    "hex");
+    try {
+        const decipher = crypto.createDecipheriv("aes-256-gcm", AES_KEY, nonce);
+        decipher.setAuthTag(tag);
+        const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+        return JSON.parse(pt.toString("utf8"));
+    } catch (err) {
+        // Auth tag mismatch or malformed plaintext — row was tampered with
+        // or wasn't encrypted with our key. Skip silently.
+        return null;
+    }
+}
+
+// Self-test on startup so we fail loudly if anything is misaligned
+(function selftest() {
+    // Roundtrip with a known plaintext via encryption
+    const sample = { name: "Test", gen_text: "$10M/s", job_id: "abc", place_id: "" };
+    const nonce = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv("aes-256-gcm", AES_KEY, nonce);
+    const pt = Buffer.from(JSON.stringify(sample), "utf8");
+    const ctBuf = Buffer.concat([cipher.update(pt), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const blob = "v7:" + nonce.toString("hex") + tag.toString("hex") + ctBuf.toString("hex");
+    const decoded = decryptPayload(blob);
+    if (!decoded || decoded.name !== "Test" || decoded.gen_text !== "$10M/s") {
+        console.error("[crypto] SELF-TEST FAILED — encryption is misaligned, aborting");
+        console.error(`  produced: ${blob.slice(0,60)}...`);
+        console.error(`  decoded:  ${JSON.stringify(decoded)}`);
+        process.exit(1);
+    }
+    console.log("[crypto] self-test OK — Python-encrypted rows will decrypt here");
+})();
 
 // ── MUTATION PREFIXES ─────────────────────────────────────────
 const MUTATIONS = new Set([
@@ -142,7 +250,7 @@ async function sendToDiscord(name, price) {
     }
 }
 
-// ── SUPABASE POLL (old logs + live) ──────────────────────────
+// ── SUPABASE POLL — decrypts each row before forwarding ──────
 const sbHeaders = {
     apikey:         SB_KEY,
     Authorization:  `Bearer ${SB_KEY}`,
@@ -162,16 +270,38 @@ async function poll(lastTs) {
 
         let newTs = lastTs;
         for (const row of rows) {
-            const name  = row.name     || "";
-            const price = row.gen_text || "";
-            const ts    = row.timestamp || 0;
-            if (!name || !price) continue;
-
-            await sendToDiscord(name, price);
+            const ts = row.timestamp || 0;
             if (ts > newTs) newTs = ts;
 
-            // same pace as old logs — 1s between each send
-            await new Promise(r => setTimeout(r, 1000));
+            // Decrypt the row. Each row's `name` column holds the
+            // encrypted blob; gen_text / job_id are empty strings.
+            const rawName = row.name || "";
+            let name, price, jobId;
+
+            if (rawName.startsWith("v7:")) {
+                const payload = decryptPayload(rawName);
+                if (!payload) {
+                    console.log(`[skip] decrypt failed for row ts=${ts}`);
+                    continue;
+                }
+                name  = payload.name     || "";
+                price = payload.gen_text || "";
+                jobId = payload.job_id   || "";
+            } else {
+                // Plaintext fallback: rows written by some other tool
+                // that doesn't encrypt. Use them directly.
+                name  = rawName;
+                price = row.gen_text || "";
+                jobId = row.job_id   || "";
+            }
+
+            if (!name || !price) {
+                console.log(`[skip] empty name/price after decrypt`);
+                continue;
+            }
+
+            await sendToDiscord(name, price);
+            await new Promise(r => setTimeout(r, 1000));   // 1s pacing
         }
         return newTs;
     } catch (err) {
@@ -181,11 +311,13 @@ async function poll(lastTs) {
 }
 
 async function main() {
-    console.log("Dragon Notifier — fetching old logs then going live");
-    console.log(`  HIGH: ${HIGHLIGHTS.size} brainrots | MID: ${MIDLIGHTS.size} | LOW: ${LOWLIGHTS.size} + fallback\n`);
+    console.log("Dragon Notifier (v2 — decrypts AES-GCM rows)");
+    console.log(`  Supabase: ${SB_URL.slice(0, 30)}...`);
+    console.log(`  HIGH: ${HIGHLIGHTS.size} | MID: ${MIDLIGHTS.size} | LOW: ${LOWLIGHTS.size} + fallback`);
+    console.log("  Starting from beginning of time — will fetch ALL rows once,");
+    console.log("  then only newer ones on each poll.\n");
 
-    let lastTs = 0;  // start from beginning — fetches ALL rows
-
+    let lastTs = 0;
     while (true) {
         lastTs = await poll(lastTs);
         await new Promise(r => setTimeout(r, POLL_MS));
